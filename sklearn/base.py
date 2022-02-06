@@ -15,10 +15,8 @@ import numpy as np
 from . import __version__
 from ._config import get_config
 from .utils import _IS_32BIT
-from .utils._tags import (
-    _DEFAULT_TAGS,
-    _safe_tags,
-)
+from .utils._tags import _DEFAULT_TAG
+from .utils._tags import _safe_tags
 from .utils.validation import check_X_y
 from .utils.validation import check_array
 from .utils.validation import _check_y
@@ -381,8 +379,7 @@ class BaseEstimator:
                 raise ValueError(
                     "X does not contain any features, but "
                     f"{self.__class__.__name__} is expecting "
-                    f"{self.n_features_in_} features"
-                ) from e
+                    f"{self.n_features_in_} features")
             # If the number of features is not defined and reset=True,
             # then we skip this check
             return
@@ -575,7 +572,7 @@ class BaseEstimator:
         if no_val_X and no_val_y:
             raise ValueError("Validation should be done on X, y or both.")
         elif not no_val_X and no_val_y:
-            X = check_array(X, input_name="X", **check_params)
+            # X = check_array(X, input_name="X", **check_params)
             out = X
         elif no_val_X and not no_val_y:
             y = _check_y(y, **check_params)
@@ -589,10 +586,10 @@ class BaseEstimator:
                 check_X_params, check_y_params = validate_separately
                 if "estimator" not in check_X_params:
                     check_X_params = {**default_check_params, **check_X_params}
-                X = check_array(X, input_name="X", **check_X_params)
+                # X = check_array(X, input_name="X", **check_X_params)
                 if "estimator" not in check_y_params:
                     check_y_params = {**default_check_params, **check_y_params}
-                y = check_array(y, input_name="y", **check_y_params)
+                # y = check_array(y, input_name="y", **check_y_params)
             else:
                 X, y = check_X_y(X, y, **check_params)
             out = X, y
