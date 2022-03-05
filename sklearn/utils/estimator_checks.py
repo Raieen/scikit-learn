@@ -317,9 +317,8 @@ def _yield_all_checks(estimator):
         for check in _yield_outliers_checks(estimator):
             yield check
     yield check_parameters_default_constructible
-    if not tags["non_deterministic"]:
-        yield check_methods_sample_order_invariance
-        yield check_methods_subset_invariance
+    yield check_methods_sample_order_invariance
+    yield check_methods_subset_invariance
     yield check_fit2d_1sample
     yield check_fit2d_1feature
     yield check_get_params_invariance
@@ -1281,6 +1280,9 @@ def _apply_on_subsets(func, X):
 
 @ignore_warnings(category=FutureWarning)
 def check_methods_subset_invariance(name, estimator_orig):
+    if _safe_tags(estimator_orig, key="non_deterministic"):
+        msg = name + " is non deterministic"
+        raise SkipTest(msg)
     # check that method gives invariant results if applied
     # on mini batches or the whole set
     rnd = np.random.RandomState(0)
@@ -1319,6 +1321,9 @@ def check_methods_subset_invariance(name, estimator_orig):
 
 @ignore_warnings(category=FutureWarning)
 def check_methods_sample_order_invariance(name, estimator_orig):
+    if _safe_tags(estimator_orig, key="non_deterministic"):
+        msg = name + " is non deterministic"
+        raise SkipTest(msg)
     # check that method gives invariant results if applied
     # on a subset with different sample order
     rnd = np.random.RandomState(0)
