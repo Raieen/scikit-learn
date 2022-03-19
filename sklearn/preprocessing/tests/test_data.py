@@ -47,6 +47,7 @@ from sklearn.preprocessing._data import _handle_zeros_in_scale
 from sklearn.preprocessing._data import BOUNDS_THRESHOLD
 
 from sklearn.exceptions import NotFittedError
+from sklearn.exceptions import UndefinedMetricWarning
 
 from sklearn.base import clone
 from sklearn.pipeline import Pipeline
@@ -2509,6 +2510,32 @@ def test_yeo_johnson_darwin_example():
     lmbda = PowerTransformer(method="yeo-johnson").fit(X).lambdas_
     assert np.allclose(lmbda, 1.305, atol=1e-3)
 
+def test_yeo_johnson_zero_var_warning():
+    #test to ensure that a single warning is thrown when the transform results
+    #in a catastrophic cancellation causing zero variance, 
+    # and that the correct data is returned
+    X = np.array([3251637.22,620695.44,11642969.00,2223468.22,85307500.00,
+    16494389.89,917215.88,11642969.00,2145773.87,4962000.00,
+    620695.44,651234.50,1907876.71,4053297.88,3251637.22,3259103.08,
+    9547969.00,20631286.23, 12807072.08,2383819.84,90114500.00,
+    17209575.46,12852969.00,2414609.99,2170368.23])
+    Expected = np.array([[-0.23030198],[-1.6982624 ],
+       [ 0.70573405],[-0.5401762 ],[ 1.892682  ],
+       [ 0.93580745],[-1.32349791],[ 0.70573405],
+       [-0.56995447],[ 0.0969763 ],[-1.6982624 ],
+       [-1.6511494 ],[-0.66930788],[-0.05744311],
+       [-0.23030198],[-0.22847775],[ 0.57003163],
+       [ 1.07829013],[ 0.7697045 ],[-0.48226763],
+       [ 1.9212548 ],[ 0.96314737],[ 0.7720907 ],
+       [-0.47165169],[-0.56039821]])
+    _trans = PowerTransformer()
+    with pytest.warns(UndefinedMetricWarning, match='Catastrophic Numerical error in \
+                    negative log likelihood for PowerTransformer \
+                    using Yeo Johnson Transform, the resulting \
+                    transform may be innacurate') as record:
+        _res = _trans.fit_transform(X.reshape(-1,1))
+        assert (len(record) == 1) # 1 warning is raised
+        assert_array_almost_equal(_res, Expected)
 
 @pytest.mark.parametrize("method", ["box-cox", "yeo-johnson"])
 def test_power_transformer_nans(method):
