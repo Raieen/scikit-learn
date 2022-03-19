@@ -16,6 +16,8 @@ from scipy import stats
 from scipy import optimize
 from scipy.special import boxcox
 
+from sklearn.exceptions import UndefinedMetricWarning
+
 from ..base import BaseEstimator, TransformerMixin, _OneToOneFeatureMixin
 from ..utils import check_array
 from ..utils.deprecation import deprecated
@@ -3233,14 +3235,24 @@ class PowerTransformer(_OneToOneFeatureMixin, TransformerMixin, BaseEstimator):
 
         Like for Box-Cox, MLE is done via the brent optimizer.
         """
+        zero_var_warn = False
 
         def _neg_log_likelihood(lmbda):
             """Return the negative log likelihood of the observed data x as a
             function of lambda."""
             x_trans = self._yeo_johnson_transform(x, lmbda)
             n_samples = x.shape[0]
+            nonlocal zero_var_warn
+            variance = x_trans.var()
+            if variance == 0:
+                zero_var_warn = True
+                warnings.warn('Catastrophic Numerical error in \
+                    negative log likelihood for PowerTransformer \
+                    using Yeo Johnson Transform, the resulting \
+                    transform may be innacurate', UndefinedMetricWarning)
+                return np.inf
 
-            loglike = -n_samples / 2 * np.log(x_trans.var())
+            loglike = -n_samples / 2 * np.log(variance)
             loglike += (lmbda - 1) * (np.sign(x) * np.log1p(np.abs(x))).sum()
 
             return -loglike
