@@ -1049,7 +1049,7 @@ class KmeansBisecting(
         return X
 
     #TODO: change this to compute the center of the data
-    def _init_centroids(self, X, x_squared_norms, init, random_state, init_size=None):
+    def _init_centroids(self, X, x_squared_norms, init, random_state, init_size=None, num_clusters=2):
         """Compute the initial centroids.
 
         Parameters
@@ -1078,7 +1078,36 @@ class KmeansBisecting(
         centers : ndarray of shape (n_clusters, n_features)
         """
         
-        return np.mean(X, axis=1)
+        n_samples = X.shape[0]
+        n_clusters = num_clusters
+
+        if init_size is not None and init_size < n_samples:
+            init_indices = random_state.randint(0, n_samples, init_size)
+            X = X[init_indices]
+            x_squared_norms = x_squared_norms[init_indices]
+            n_samples = X.shape[0]
+
+        if isinstance(init, str) and init == "k-means++":
+            centers, _ = _kmeans_plusplus(
+                X,
+                n_clusters,
+                random_state=random_state,
+                x_squared_norms=x_squared_norms,
+            )
+        elif isinstance(init, str) and init == "random":
+            seeds = random_state.permutation(n_samples)[:n_clusters]
+            centers = X[seeds]
+        elif hasattr(init, "__array__"):
+            centers = init
+        elif callable(init):
+            centers = init(X, n_clusters, random_state=random_state)
+            centers = check_array(centers, dtype=X.dtype, copy=False, order="C")
+            self._validate_center_shape(X, centers)
+
+        if sp.issparse(centers):
+            centers = centers.toarray()
+
+        return centers
 
     #TODO: instead of computing K-Means, compute Bisecting K-Means
     def fit(self, X, y=None, sample_weight=None):
@@ -1149,9 +1178,6 @@ class KmeansBisecting(
 
         # for i in range(self._n_init):
             # Initialize centers
-        centers_init = self._init_centroids(
-            X, x_squared_norms=x_squared_norms, init=init, random_state=random_state
-        )
         if self.verbose:
             print("Initialization complete")
 
@@ -1162,45 +1188,54 @@ class KmeansBisecting(
 
         # run a k-means once
         for i in range(self.n_clusters - 1):
-            selected_cluster = X
-            if i != 0:
-                # Do some counting for which cluster has the most labels.
-                cluster_counts = np.bincount(Labels)
-                max_label = np.argmax(cluster_counts)[0]
-                selected_cluster = X[Labels == max_label]
-                indices_selected_cluster = np.where(Labels == max_label) # Get indices of the partitioned data.
-            labels, inertia, centers, n_iter_ = kmeans_single(
-                X,
-                sample_weight,
-                2,
-                max_iter=self.max_iter,
-                verbose=self.verbose,
-                tol=self._tol,
-                x_squared_norms=x_squared_norms,
-                n_threads=self._n_threads,
-            )
-            if (i == 0):
-                Labels = labels
-                Centers = centers
+            best_inertia, best_labels = None, None
+            for i in range(self._n_init):
+                selected_cluster = X
+                if i != 0:
+                    # Do some counting for which cluster has the most labels.
+                    cluster_counts = np.bincount(Labels)
+                    max_label = np.argmax(cluster_counts)[0]
+                    selected_cluster = X[Labels == max_label]
+                    selected_squared_norms = x_squared_norms[Labels == max_label]
+                    selected_sample_weight = sample_weight[Labels == max_label]
+                    indices_selected_cluster = np.where(Labels == max_label) # Get indices of the partitioned data.
+                centers_init = self._init_centroids(
+                    selected_cluster, x_squared_norms=selected_squared_norms, init=init, random_state=random_state, num_clusters=2
+                )
+                labels, inertia, centers, n_iter_ = kmeans_single(
+                    selected_cluster,
+                    sample_weight=selected_sample_weight,
+                    centers_init=centers_init,
+                    max_iter=self.max_iter,
+                    verbose=self.verbose,
+                    tol=self._tol,
+                    x_squared_norms=selected_squared_norms,
+                    n_threads=self._n_threads,
+                )
+                if (i == 0):
+                    Labels = labels
+                    Centers = centers
 
-            # Merge the labels into current results.
-            if (i != 0):
-                for index, i in enumerate(indices_selected_cluster):
-                    Labels[index] = labels[i]
-                    
-        # determine if these results are the best so far
-        # we chose a new run if it has a better inertia and the clustering is
-        # different from the best so far (it's possible that the inertia is
-        # slightly better even if the clustering is the same with potentially
-        # permuted labels, due to rounding errors)
-        if best_inertia is None or (
-            inertia < best_inertia
-            and not _is_same_clustering(labels, best_labels, self.n_clusters)
-        ):
-            best_labels = labels
-            best_centers = centers
-            best_inertia = inertia
-            best_n_iter = n_iter_
+                Inertia = inertia
+                N_iter_ = n_iter_
+                # Merge the labels into current results.
+                if (i != 0):
+                    for index, i in enumerate(indices_selected_cluster):
+                        Labels[index] = labels[i]
+            
+                # determine if these results are the best so far
+                # we chose a new run if it has a better inertia and the clustering is
+                # different from the best so far (it's possible that the inertia is
+                # slightly better even if the clustering is the same with potentially
+                # permuted labels, due to rounding errors)
+                if best_inertia is None or (
+                    Inertia < best_inertia
+                    and not _is_same_clustering(labels, best_labels, self.n_clusters)
+                ):
+                    best_labels = Labels
+                    best_centers = Centers
+                    best_inertia = Inertia
+                    best_n_iter = N_iter_
 
         if not sp.issparse(X):
             if not self.copy_x:
