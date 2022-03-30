@@ -1048,6 +1048,41 @@ class KmeansBisecting(
         )
         return X
 
+    def _check_mkl_vcomp(self, X, n_samples):
+        """Warns when vcomp and mkl are both present"""
+        # The BLAS call inside a prange in lloyd_iter_chunked_dense is known to
+        # cause a small memory leak when there are less chunks than the number
+        # of available threads. It only happens when the OpenMP library is
+        # vcomp (microsoft OpenMP) and the BLAS library is MKL. see #18653
+        if sp.issparse(X):
+            return
+
+        active_threads = int(np.ceil(n_samples / CHUNK_SIZE))
+        if active_threads < self._n_threads:
+            modules = threadpool_info()
+            has_vcomp = "vcomp" in [module["prefix"] for module in modules]
+            has_mkl = ("mkl", "intel") in [
+                (module["internal_api"], module.get("threading_layer", None))
+                for module in modules
+            ]
+            if has_vcomp and has_mkl:
+                if not hasattr(self, "batch_size"):  # KMeans
+                    warnings.warn(
+                        "KMeans is known to have a memory leak on Windows "
+                        "with MKL, when there are less chunks than available "
+                        "threads. You can avoid it by setting the environment"
+                        f" variable OMP_NUM_THREADS={active_threads}."
+                    )
+                else:  # MiniBatchKMeans
+                    warnings.warn(
+                        "MiniBatchKMeans is known to have a memory leak on "
+                        "Windows with MKL, when there are less chunks than "
+                        "available threads. You can prevent it by setting "
+                        f"batch_size >= {self._n_threads * CHUNK_SIZE} or by "
+                        "setting the environment variable "
+                        f"OMP_NUM_THREADS={active_threads}"
+                    )
+
     #TODO: change this to compute the center of the data
     def _init_centroids(self, X, x_squared_norms, init, random_state, init_size=None, num_clusters=2):
         """Compute the initial centroids.
