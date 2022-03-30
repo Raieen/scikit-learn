@@ -12,7 +12,7 @@ from ._agglomerative import (
     linkage_tree,
     FeatureAgglomeration,
 )
-from ._kmeans import k_means, KMeans, MiniBatchKMeans, kmeans_plusplus
+from ._kmeans import k_means, KMeans, MiniBatchKMeans, kmeans_plusplus, KmeansBisecting
 from ._dbscan import dbscan, DBSCAN
 from ._optics import (
     OPTICS,
@@ -49,4 +49,5 @@ __all__ = [
     "ward_tree",
     "SpectralBiclustering",
     "SpectralCoclustering",
+    "KmeansBisecting",
 ]
