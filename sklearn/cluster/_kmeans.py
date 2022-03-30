@@ -771,7 +771,7 @@ def _labels_inertia_threadpool_limit(
 
     return labels, inertia
 
-#TODO: implement this class, remove this once the class works as expected and passes unit tests
+#TODO: add strategy pattern
 class KmeansBisecting(
     _ClassNamePrefixFeaturesOutMixin, TransformerMixin, ClusterMixin, BaseEstimator
 ):
@@ -786,7 +786,7 @@ class KmeansBisecting(
         The number of clusters to form as well as the number of
         centroids to generate.
 
-    TODO: not sure if this param makes sense, may make sense for the K-MEANS usage, will need to change doc regardless
+    
     init : {'k-means++', 'random'}, callable or array-like of shape \
             (n_clusters, n_features), default='k-means++'
         Method for initialization:
@@ -804,13 +804,13 @@ class KmeansBisecting(
         If a callable is passed, it should take arguments X, n_clusters and a
         random state and return an initialization.
 
-    TODO: this param definitely does not make sense, this algo always inits with 1 center, and 2 centers at each intermediate step
+    
     n_init : int, default=10
         Number of time the k-means algorithm will be run with different
         centroid seeds. The final results will be the best output of
         n_init consecutive runs in terms of inertia.
 
-    TODO: this may be an unreasonable default value, as K-Means is being run many times
+    
     max_iter : int, default=300
         Maximum number of iterations of the k-means algorithm for a
         single run.
@@ -882,16 +882,8 @@ class KmeansBisecting(
         has feature names that are all strings.
 
         .. versionadded:: 1.0
+    TODO: update this doc to reflect Bisecting KMeans
 
-    See Also TODO: we will NOT IMPLEMENT Mini Batching
-    --------
-    MiniBatchKMeans : Alternative online implementation that does incremental
-        updates of the centers positions using mini-batches.
-        For large scale learning (say n_samples > 10k) MiniBatchKMeans is
-        probably much faster than the default batch implementation.
-
-    Notes
-    -----
     The k-means problem is solved using either Lloyd's or Elkan's algorithm.
 
     The average complexity is given by O(k n T), where n is the number of
@@ -935,7 +927,7 @@ class KmeansBisecting(
         - perform K-Means with K=2 on it for at most max_iter iterations
         - pick the clustering with the highest similarity score
     """
-    #TODO: update params
+    
     def __init__(
         self,
         n_clusters=8,
@@ -960,7 +952,7 @@ class KmeansBisecting(
         self.copy_x = copy_x
         self.algorithm = algorithm
 
-    #TODO: update check_params
+
     def _check_params(self, X):
         # n_init
         if self.n_init <= 0:
@@ -1023,7 +1015,7 @@ class KmeansBisecting(
                 stacklevel=2,
             )
             self._n_init = 1
-    #TODO: probably remove this? passing in centers doesn't make sense IMO
+
     def _validate_center_shape(self, X, centers):
         """Check if centers is compatible with X and n_clusters."""
         if centers.shape[0] != self.n_clusters:
@@ -1036,7 +1028,7 @@ class KmeansBisecting(
                 f"The shape of the initial centers {centers.shape} does not "
                 f"match the number of features of the data {X.shape[1]}."
             )
-    #TODO: check what validate data does, and change if necessary
+
     def _check_test_data(self, X):
         X = self._validate_data(
             X,
@@ -1083,7 +1075,7 @@ class KmeansBisecting(
                         f"OMP_NUM_THREADS={active_threads}"
                     )
 
-    #TODO: change this to compute the center of the data
+
     def _init_centroids(self, X, x_squared_norms, init, random_state, init_size=None, num_clusters=2):
         """Compute the initial centroids.
 
@@ -1144,7 +1136,6 @@ class KmeansBisecting(
 
         return centers
 
-    #TODO: instead of computing K-Means, compute Bisecting K-Means
     def fit(self, X, y=None, sample_weight=None):
         """Compute bisecting k-means clustering.
 
@@ -1287,23 +1278,20 @@ class KmeansBisecting(
                     best_centers = centers
                     best_inertia = inertia
                     best_n_iter = n_iter_
-                #update total best centers
-                try:
-                    if(not(T_best_centers)):
-                        T_best_centers = best_centers
-                except:
-                    T_best_centers[selected_cluster_idx] = best_centers[0]
-                    T_best_centers = np.append(T_best_centers,np.asarray([best_centers[1]]),axis=1)
-                #update total iterations
-                T_n_iter += best_n_iter
+            #update total best centers
+            try:
+                if(not(T_best_centers)):
+                    T_best_centers = best_centers
+            except:
+                T_best_centers[selected_cluster_idx] = best_centers[0]
+                T_best_centers = np.append(T_best_centers,[best_centers[1]],axis=0)
+            #update total iterations
+            T_n_iter += best_n_iter
         
         if not sp.issparse(X):
             if not self.copy_x:
                 X += X_mean
             T_best_centers += X_mean
-            _inertia = _inertia_dense
-        else:
-            _inertia = _inertia_sparse
         
         distinct_clusters = len(set(T_best_labels))
         if distinct_clusters < self.n_clusters:
@@ -1318,10 +1306,10 @@ class KmeansBisecting(
         self.cluster_centers_ = T_best_centers
         self._n_features_out = self.cluster_centers_.shape[0]
         self.labels_ = T_best_labels
-        self.inertia_ = _inertia(X, sample_weight, self.cluster_centers_, self.labels_, self._n_threads)
+        self.inertia_ = -_labels_inertia_threadpool_limit(X, sample_weight, x_squared_norms, self.cluster_centers_, self._n_threads)[1]
         self.n_iter_ = T_n_iter
         return self
-    #TODO: after changing fit, may need fix
+    
     def fit_predict(self, X, y=None, sample_weight=None):
         """Compute cluster centers and predict cluster index for each sample.
 
@@ -1346,7 +1334,7 @@ class KmeansBisecting(
             Index of the cluster each sample belongs to.
         """
         return self.fit(X, sample_weight=sample_weight).labels_
-    #TODO:after changing fit, may need fixes
+    
     def fit_transform(self, X, y=None, sample_weight=None):
         """Compute clustering and transform X to cluster-distance space.
 
@@ -1370,7 +1358,7 @@ class KmeansBisecting(
             X transformed in the new space.
         """
         return self.fit(X, sample_weight=sample_weight)._transform(X)
-    #TODO: may need fixes
+    
     def transform(self, X):
         """Transform X to a cluster-distance space.
 
@@ -1392,11 +1380,11 @@ class KmeansBisecting(
 
         X = self._check_test_data(X)
         return self._transform(X)
-    #TODO: may need fixes
+    
     def _transform(self, X):
         """Guts of transform method; no input validation."""
         return euclidean_distances(X, self.cluster_centers_)
-    #TODO: may need fixes
+    
     def predict(self, X, sample_weight=None):
         """Predict the closest cluster each sample in X belongs to.
 
@@ -1427,7 +1415,7 @@ class KmeansBisecting(
         return _labels_inertia_threadpool_limit(
             X, sample_weight, x_squared_norms, self.cluster_centers_, self._n_threads
         )[0]
-    #TODO: figure out what this means, may need fixes
+    
     def score(self, X, y=None, sample_weight=None):
         """Opposite of the value of X on the K-means objective.
 
@@ -1457,7 +1445,7 @@ class KmeansBisecting(
         return -_labels_inertia_threadpool_limit(
             X, sample_weight, x_squared_norms, self.cluster_centers_, self._n_threads
         )[1]
-    #TODO: what is more tags? is this a valid config?
+    
     def _more_tags(self):
         return {
             "_xfail_checks": {
