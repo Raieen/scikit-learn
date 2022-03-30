@@ -870,7 +870,7 @@ class KmeansBisecting(
         weighted by the sample weights if provided.
 
     n_iter_ : int
-        Number of iterations run.
+        Sum of Number of iterations run at all bisecting steps of KMeans.
 
     n_features_in_ : int
         Number of features seen during :term:`fit`.
@@ -1216,30 +1216,34 @@ class KmeansBisecting(
 
         
         T_best_inertia = None
-        T_best_labels = np.zeros(X.shape)
+        T_best_labels = np.zeros((X.shape[0]),dtype=np.int32)
         T_best_centers = None
-        T_best_n_iter = None
+        T_n_iter = 0
 
         # run a k-means once
         for i in range(self.n_clusters - 1):
             best_centers = T_best_centers
-            best_n_iter_ = T_best_n_iter
-            best_inertia = T_best_inertia
-            best_labels = T_best_labels
+            best_n_iter_ = 0
+            best_inertia = None
+            best_labels = T_best_labels.copy()
+            #if it is the first iteration, we select the whole dataset as the cluster being split
+            selected_cluster = X
+            selected_cluster_idx = 0
+            selected_squared_norms = x_squared_norms
+            selected_sample_weight = sample_weight
+            indices_selected_cluster = np.where([best_labels]) # Get indices of the partitioned data.
+            #select a cluster
+            if i!=0:
+                # Do some counting for which cluster has the most labels.
+                cluster_counts = np.bincount(best_labels)
+                max_labels = np.argmax(cluster_counts)
+                selected_cluster_idx = max_labels if np.isscalar(max_labels) else max_labels[0]
+                selected_cluster = X[best_labels == selected_cluster_idx]
+                selected_squared_norms = x_squared_norms[best_labels == selected_cluster_idx]
+                selected_sample_weight = sample_weight[best_labels == selected_cluster_idx]
+                indices_selected_cluster = np.where([best_labels == selected_cluster_idx])[1] # Get indices of the partitioned data.
+            #find best new clustering of the selected cluster
             for j in range(self._n_init):
-                selected_cluster = X
-                selected_squared_norms = x_squared_norms
-                selected_sample_weight = sample_weight
-                indices_selected_cluster = np.where(True) # Get indices of the partitioned data.
-                if i != 0:
-                    # Do some counting for which cluster has the most labels.
-                    cluster_counts = np.bincount(T_best_labels)
-                    max_labels = np.argmax(cluster_counts)
-                    max_label = max_labels if np.isscalar(max_labels) else max_labels[0]
-                    selected_cluster = X[T_best_labels == max_label]
-                    selected_squared_norms = x_squared_norms[T_best_labels == max_label]
-                    selected_sample_weight = sample_weight[T_best_labels == max_label]
-                    indices_selected_cluster = np.where(T_best_labels == max_label) # Get indices of the partitioned data.
                 centers_init = self._init_centroids(
                     selected_cluster, x_squared_norms=selected_squared_norms, init=init, random_state=random_state, num_clusters=2
                 )
@@ -1253,40 +1257,53 @@ class KmeansBisecting(
                     x_squared_norms=selected_squared_norms,
                     n_threads=self._n_threads,
                 )
-                if (i == 0):
-                    best_labels = labels
-                    best_centers = centers
-                # Merge the labels into current results.
-                if (i != 0):
-                    for k, index in enumerate(indices_selected_cluster):
-                        best_labels[index] = labels[k]
+                # if (i == 0):
+                #     best_labels = labels
+                #     best_centers = centers
+                # # Merge the labels into current results.
+                # if (i != 0):
+                #     for k, index in np.ndenumerate(indices_selected_cluster):
+                #         best_labels[index] = labels[k]
             
                 # determine if these results are the best so far
                 # we chose a new run if it has a better inertia and the clustering is
                 # different from the best so far (it's possible that the inertia is
                 # slightly better even if the clustering is the same with potentially
                 # permuted labels, due to rounding errors)
+                
                 if best_inertia is None or (
                     inertia < best_inertia
-                    and not _is_same_clustering(labels, best_labels, self.n_clusters)
+                    and not _is_same_clustering(labels, T_best_labels, self.n_clusters)
                 ):
-                    T_best_labels = best_labels
-                    T_best_centers = best_centers
-                    T_best_inertia = best_inertia
-                    T_best_n_iter = best_n_iter_
-            # if T_best_inertia is None or (
-            #     best_inertia < T_best_inertia
-            #     and not _is_same_clustering(best_labels, T_best_labels, self.n_clusters)
-            # ):
-            #     T_best_labels = best_labels
-            #     T_best_centers = best_centers
-            #     T_best_inertia = best_inertia
-            #     T_best_n_iter = best_n_iter
-
+                    #update best labels, centers and inertia
+                    if(len(labels) == len(X)):
+                        T_best_labels = labels
+                    else:
+                        for k, index in np.ndenumerate(indices_selected_cluster):
+                            if(labels[k]):
+                                T_best_labels[index] = i+1
+                            else:
+                                T_best_labels[index] = selected_cluster_idx
+                    best_centers = centers
+                    best_inertia = inertia
+                    best_n_iter = n_iter_
+                #update total best centers
+                try:
+                    if(not(T_best_centers)):
+                        T_best_centers = best_centers
+                except:
+                    T_best_centers[selected_cluster_idx] = best_centers[0]
+                    T_best_centers = np.append(T_best_centers,np.asarray([best_centers[1]]),axis=1)
+                #update total iterations
+                T_n_iter += best_n_iter
+        
         if not sp.issparse(X):
             if not self.copy_x:
                 X += X_mean
-            best_centers += X_mean
+            T_best_centers += X_mean
+            _inertia = _inertia_dense
+        else:
+            _inertia = _inertia_sparse
         
         distinct_clusters = len(set(T_best_labels))
         if distinct_clusters < self.n_clusters:
@@ -1301,8 +1318,8 @@ class KmeansBisecting(
         self.cluster_centers_ = T_best_centers
         self._n_features_out = self.cluster_centers_.shape[0]
         self.labels_ = T_best_labels
-        self.inertia_ = T_best_inertia
-        self.n_iter_ = T_best_n_iter
+        self.inertia_ = _inertia(X, sample_weight, self.cluster_centers_, self.labels_, self._n_threads)
+        self.n_iter_ = T_n_iter
         return self
     #TODO: after changing fit, may need fix
     def fit_predict(self, X, y=None, sample_weight=None):
