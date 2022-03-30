@@ -11,6 +11,7 @@
 #          Robert Layton <robertlayton@gmail.com>
 # License: BSD 3 clause
 
+from code import interact
 import warnings
 
 import numpy as np
@@ -1076,40 +1077,12 @@ class KmeansBisecting(
         -------
         centers : ndarray of shape (n_clusters, n_features)
         """
-        n_samples = X.shape[0]
-        n_clusters = self.n_clusters
-
-        if init_size is not None and init_size < n_samples:
-            init_indices = random_state.randint(0, n_samples, init_size)
-            X = X[init_indices]
-            x_squared_norms = x_squared_norms[init_indices]
-            n_samples = X.shape[0]
-
-        if isinstance(init, str) and init == "k-means++":
-            centers, _ = _kmeans_plusplus(
-                X,
-                n_clusters,
-                random_state=random_state,
-                x_squared_norms=x_squared_norms,
-            )
-        elif isinstance(init, str) and init == "random":
-            seeds = random_state.permutation(n_samples)[:n_clusters]
-            centers = X[seeds]
-        elif hasattr(init, "__array__"):
-            centers = init
-        elif callable(init):
-            centers = init(X, n_clusters, random_state=random_state)
-            centers = check_array(centers, dtype=X.dtype, copy=False, order="C")
-            self._validate_center_shape(X, centers)
-
-        if sp.issparse(centers):
-            centers = centers.toarray()
-
-        return centers
+        
+        return np.mean(X, axis=1)
 
     #TODO: instead of computing K-Means, compute Bisecting K-Means
     def fit(self, X, y=None, sample_weight=None):
-        """Compute k-means clustering.
+        """Compute bisecting k-means clustering.
 
         Parameters
         ----------
@@ -1174,39 +1147,60 @@ class KmeansBisecting(
 
         best_inertia, best_labels = None, None
 
-        for i in range(self._n_init):
+        # for i in range(self._n_init):
             # Initialize centers
-            centers_init = self._init_centroids(
-                X, x_squared_norms=x_squared_norms, init=init, random_state=random_state
-            )
-            if self.verbose:
-                print("Initialization complete")
+        centers_init = self._init_centroids(
+            X, x_squared_norms=x_squared_norms, init=init, random_state=random_state
+        )
+        if self.verbose:
+            print("Initialization complete")
 
-            # run a k-means once
+        Labels = None
+        Inertia = None
+        Centers = None
+        N_iter_ = None
+
+        # run a k-means once
+        for i in range(self.n_clusters - 1):
+            selected_cluster = X
+            if i != 0:
+                # Do some counting for which cluster has the most labels.
+                cluster_counts = np.bincount(Labels)
+                max_label = np.argmax(cluster_counts)[0]
+                selected_cluster = X[Labels == max_label]
+                indices_selected_cluster = np.where(Labels == max_label) # Get indices of the partitioned data.
             labels, inertia, centers, n_iter_ = kmeans_single(
                 X,
                 sample_weight,
-                centers_init,
+                2,
                 max_iter=self.max_iter,
                 verbose=self.verbose,
                 tol=self._tol,
                 x_squared_norms=x_squared_norms,
                 n_threads=self._n_threads,
             )
+            if (i == 0):
+                Labels = labels
+                Centers = centers
 
-            # determine if these results are the best so far
-            # we chose a new run if it has a better inertia and the clustering is
-            # different from the best so far (it's possible that the inertia is
-            # slightly better even if the clustering is the same with potentially
-            # permuted labels, due to rounding errors)
-            if best_inertia is None or (
-                inertia < best_inertia
-                and not _is_same_clustering(labels, best_labels, self.n_clusters)
-            ):
-                best_labels = labels
-                best_centers = centers
-                best_inertia = inertia
-                best_n_iter = n_iter_
+            # Merge the labels into current results.
+            if (i != 0):
+                for index, i in enumerate(indices_selected_cluster):
+                    Labels[index] = labels[i]
+                    
+        # determine if these results are the best so far
+        # we chose a new run if it has a better inertia and the clustering is
+        # different from the best so far (it's possible that the inertia is
+        # slightly better even if the clustering is the same with potentially
+        # permuted labels, due to rounding errors)
+        if best_inertia is None or (
+            inertia < best_inertia
+            and not _is_same_clustering(labels, best_labels, self.n_clusters)
+        ):
+            best_labels = labels
+            best_centers = centers
+            best_inertia = inertia
+            best_n_iter = n_iter_
 
         if not sp.issparse(X):
             if not self.copy_x:
