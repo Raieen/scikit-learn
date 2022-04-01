@@ -1,6 +1,7 @@
 """Testing for K-means"""
 import re
 import sys
+from unittest import SkipTest
 
 import numpy as np
 from scipy import sparse as sp
@@ -12,7 +13,7 @@ from sklearn.utils._testing import assert_allclose
 from sklearn.utils.fixes import _astype_copy_false
 from sklearn.utils.fixes import threadpool_limits
 from sklearn.base import clone
-from sklearn.exceptions import ConvergenceWarning
+from sklearn.exceptions import ConvergenceWarning, FitFailedWarning
 
 from sklearn.utils.extmath import row_norms
 from sklearn.metrics import pairwise_distances
@@ -300,8 +301,19 @@ def _check_fitted_model(km):
 )
 @pytest.mark.parametrize("Estimator", [KMeans, MiniBatchKMeans, KmeansBisecting])
 def test_all_init(Estimator, data, init):
+    print(repr(Estimator))
+    if repr(Estimator) == repr(KmeansBisecting) and hasattr(init, "__array__"):
+        raise SkipTest(f'skipping test of {{{Estimator}, {data}, {init}}} for \
+            reason: Bisecting K-Means cannot be initialized by an array of\
+            centers, provide an init method instead')
     # Check KMeans and MiniBatchKMeans with all possible init.
+    #TODO: skip the test when the estimator used is KmeansBisecting and
+    # the callable being used returns any number of centers other than 2
+    # raise SkipTest(f'skipping test of {{{Estimator}, {data}, {init}}} for \
+    # reason: Bisecting K-Means cannot be initialized by an array of\
+    # centers of size different than 2, modify callable to return 2 centers')
     n_init = 10 if isinstance(init, str) else 1
+    print(init)
     km = Estimator(
         init=init, n_clusters=n_clusters, random_state=42, n_init=n_init
     ).fit(data)

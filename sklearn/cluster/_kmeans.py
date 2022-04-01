@@ -35,7 +35,7 @@ from ..utils import check_random_state
 from ..utils.validation import check_is_fitted, _check_sample_weight
 from ..utils._openmp_helpers import _openmp_effective_n_threads
 from ..utils._readonly_array_wrapper import ReadonlyArrayWrapper
-from ..exceptions import ConvergenceWarning
+from ..exceptions import ConvergenceWarning, FitFailedWarning
 from ._k_means_common import CHUNK_SIZE
 from ._k_means_common import _inertia_dense
 from ._k_means_common import _inertia_sparse
@@ -787,8 +787,7 @@ class KmeansBisecting(
         centroids to generate.
 
     
-    init : {'k-means++', 'random'}, callable or array-like of shape \
-            (n_clusters, n_features), default='k-means++'
+    init : {'k-means++', 'random'}, or default='k-means++'
         Method for initialization:
 
         'k-means++' : selects initial cluster centers for k-mean
@@ -1076,7 +1075,7 @@ class KmeansBisecting(
                     )
 
 
-    def _init_centroids(self, X, x_squared_norms, init, random_state, init_size=None, num_clusters=2):
+    def _init_centroids(self, X, x_squared_norms, init, random_state, init_size=None, num_clusters = 2):
         """Compute the initial centroids.
 
         Parameters
@@ -1088,8 +1087,7 @@ class KmeansBisecting(
             Squared euclidean norm of each data point. Pass it if you have it
             at hands already to avoid it being recomputed here.
 
-        init : {'k-means++', 'random'}, callable or ndarray of shape \
-                (n_clusters, n_features)
+        init : {'k-means++', 'random'}, or callable
             Method for initialization.
 
         random_state : RandomState instance
@@ -1104,7 +1102,6 @@ class KmeansBisecting(
         -------
         centers : ndarray of shape (n_clusters, n_features)
         """
-        
         n_samples = X.shape[0]
         n_clusters = num_clusters
 
@@ -1125,10 +1122,13 @@ class KmeansBisecting(
             seeds = random_state.permutation(n_samples)[:n_clusters]
             centers = X[seeds]
         elif hasattr(init, "__array__"):
-            centers = init
+            raise FitFailedWarning(f'initializing Bisecting K-Means using an ndarray: {init} is not allowed')
         elif callable(init):
             centers = init(X, n_clusters, random_state=random_state)
             centers = check_array(centers, dtype=X.dtype, copy=False, order="C")
+            #TODO: verify that this if statement correctly checks for number of centers other than 2
+            if(centers.shape[1] != 2):
+                raise FitFailedWarning(f'initializing Bisecting K-Means using a callable: {init} must return exactly 2 centers')
             self._validate_center_shape(X, centers)
 
         if sp.issparse(centers):
@@ -1267,7 +1267,8 @@ class KmeansBisecting(
                     and not _is_same_clustering(labels, T_best_labels, self.n_clusters)
                 ):
                     #update best labels, centers and inertia
-                    if(len(labels) == len(X)):
+                    if(labels.shape[0] == X.shape[0]):
+                    # if(len(labels) == len(X)):
                         T_best_labels = labels
                     else:
                         for k, index in np.ndenumerate(indices_selected_cluster):
@@ -1306,7 +1307,7 @@ class KmeansBisecting(
         self.cluster_centers_ = T_best_centers
         self._n_features_out = self.cluster_centers_.shape[0]
         self.labels_ = T_best_labels
-        self.inertia_ = -_labels_inertia_threadpool_limit(X, sample_weight, x_squared_norms, self.cluster_centers_, self._n_threads)[1]
+        self.inertia_ = _labels_inertia_threadpool_limit(X, sample_weight, x_squared_norms, self.cluster_centers_, self._n_threads)[1]
         self.n_iter_ = T_n_iter
         return self
     
