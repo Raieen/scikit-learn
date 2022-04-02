@@ -301,19 +301,13 @@ def _check_fitted_model(km):
 )
 @pytest.mark.parametrize("Estimator", [KMeans, MiniBatchKMeans, KmeansBisecting])
 def test_all_init(Estimator, data, init):
-    print(repr(Estimator))
-    if repr(Estimator) == repr(KmeansBisecting) and hasattr(init, "__array__"):
+    if repr(Estimator) == repr(KmeansBisecting) and (hasattr(init, "__array__") or callable(init)):
         raise SkipTest(f'skipping test of {{{Estimator}, {data}, {init}}} for \
             reason: Bisecting K-Means cannot be initialized by an array of\
-            centers, provide an init method instead')
-    # Check KMeans and MiniBatchKMeans with all possible init.
-    #TODO: skip the test when the estimator used is KmeansBisecting and
-    # the callable being used returns any number of centers other than 2
-    # raise SkipTest(f'skipping test of {{{Estimator}, {data}, {init}}} for \
-    # reason: Bisecting K-Means cannot be initialized by an array of\
-    # centers of size different than 2, modify callable to return 2 centers')
+            centers, provide an init method string instead')
+    
+    # Check KMeans and MiniBatchKMeans with all possible init.  
     n_init = 10 if isinstance(init, str) else 1
-    print(init)
     km = Estimator(
         init=init, n_clusters=n_clusters, random_state=42, n_init=n_init
     ).fit(data)
@@ -337,7 +331,7 @@ def test_minibatch_kmeans_partial_fit_init(init):
     _check_fitted_model(km)
 
 
-@pytest.mark.parametrize("Estimator", [KMeans, MiniBatchKMeans, KmeansBisecting])
+@pytest.mark.parametrize("Estimator", [KMeans, MiniBatchKMeans])
 def test_fortran_aligned_data(Estimator):
     # Check that KMeans works with fortran-aligned data.
     X_fortran = np.asfortranarray(X)
@@ -429,7 +423,7 @@ def test_minibatch_kmeans_warning_init_size():
         MiniBatchKMeans(init_size=10, n_clusters=20).fit(X)
 
 
-@pytest.mark.parametrize("Estimator", [KMeans, MiniBatchKMeans, KmeansBisecting]) # ??
+@pytest.mark.parametrize("Estimator", [KMeans, MiniBatchKMeans])
 def test_warning_n_init_precomputed_centers(Estimator):
     # Check that a warning is raised when n_init > 1 and an array is passed for
     # the init parameter.
@@ -665,7 +659,7 @@ def test_predict(Estimator, algorithm, init, dtype, array_constr):
     assert_array_equal(pred, np.arange(10))
 
 
-@pytest.mark.parametrize("Estimator", [KMeans, MiniBatchKMeans, KmeansBisecting]) #??
+@pytest.mark.parametrize("Estimator", [KMeans, MiniBatchKMeans, KmeansBisecting])
 def test_dense_sparse(Estimator):
     # Check that the results are the same for dense and sparse input.
     sample_weight = np.random.RandomState(0).random_sample((n_samples,))
@@ -681,7 +675,7 @@ def test_dense_sparse(Estimator):
 @pytest.mark.parametrize(
     "init", ["random", "k-means++", centers], ids=["random", "k-means++", "ndarray"]
 )
-@pytest.mark.parametrize("Estimator", [KMeans, MiniBatchKMeans, KmeansBisecting]) #??
+@pytest.mark.parametrize("Estimator", [KMeans, MiniBatchKMeans])
 def test_predict_dense_sparse(Estimator, init):
     # check that models trained on sparse input also works for dense input at
     # predict time and vice versa.
@@ -709,6 +703,9 @@ def test_integer_input(Estimator, array_constr, dtype, init):
     n_init = 1 if init == "ndarray" else 10
     init = X_dense[:2] if init == "ndarray" else init
 
+    if Estimator is KmeansBisecting:
+        init = "k-means++"
+
     km = Estimator(n_clusters=2, init=init, n_init=n_init, random_state=0)
     if Estimator is MiniBatchKMeans:
         km.set_params(batch_size=2)
@@ -724,10 +721,12 @@ def test_integer_input(Estimator, array_constr, dtype, init):
     # Same with partial_fit (#14314)
     if Estimator is MiniBatchKMeans:
         km = clone(km).partial_fit(X)
-        assert km.cluster_centers_.dtype == np.float64 # TODO: do we need a special case?
+        assert km.cluster_centers_.dtype == np.float64
+
+    
 
 
-@pytest.mark.parametrize("Estimator", [KMeans, MiniBatchKMeans, KmeansBisecting]) # TODO: ?
+@pytest.mark.parametrize("Estimator", [KMeans, MiniBatchKMeans, KmeansBisecting])
 def test_transform(Estimator):
     # Check the transform method
     km = Estimator(n_clusters=n_clusters).fit(X)
@@ -820,7 +819,7 @@ def test_float_precision(Estimator, data):
 
 
 @pytest.mark.parametrize("dtype", [np.int32, np.int64, np.float32, np.float64])
-@pytest.mark.parametrize("Estimator", [KMeans, MiniBatchKMeans, KmeansBisecting])
+@pytest.mark.parametrize("Estimator", [KMeans, MiniBatchKMeans])
 def test_centers_not_mutated(Estimator, dtype):
     # Check that KMeans and MiniBatchKMeans won't mutate the user provided
     # init centers silently even if input data and init centers have the same
@@ -1056,7 +1055,7 @@ def test_sample_weight_unchanged(Estimator):
     assert_array_equal(sample_weight, np.array([0.5, 0.2, 0.3]))
 
 
-@pytest.mark.parametrize("Estimator", [KMeans, MiniBatchKMeans, KmeansBisecting]) # TODO: When impl is done, check what validation we do and if it different than other classes in _kmeans.py
+@pytest.mark.parametrize("Estimator", [KMeans, MiniBatchKMeans])
 @pytest.mark.parametrize(
     "param, match",
     [
@@ -1218,29 +1217,3 @@ def test_feature_names_out(Klass, method):
 
     names_out = kmeans.get_feature_names_out()
     assert_array_equal([f"{class_name}{i}" for i in range(n_clusters)], names_out)
-
-@pytest.mark.parametrize(
-    "array_constr", [np.array, sp.csr_matrix], ids=["dense", "sparse"]
-)
-@pytest.mark.parametrize("algo", ["lloyd", "elkan"])
-@pytest.mark.parametrize("dtype", [np.float32, np.float64])
-def test_kmeans_bisecting_results(array_constr, algo, dtype):
-    # Checks that KmeansBisecting works as intended on toy dataset by comparing with
-    # expected results computed by hand.
-    X = array_constr([[0, 0], [0.5, 0], [0.5, 1], [1, 1]], dtype=dtype)
-    #sample_weight = [3, 1, 1, 3]
-    init_centers = np.array([[0, 0], [1, 1]], dtype=dtype)
-
-    expected_labels = [0, 0, 1, 1]
-    expected_inertia = 0.375
-    expected_centers = np.array([[0.125, 0], [0.875, 1]], dtype=dtype)
-    expected_n_iter = 2
-
-    kmeans_bisect = KmeansBisecting(n_clusters=2, n_init=1, init=init_centers, algorithm=algo)
-    # kmeans_bisect.fit(X, sample_weight=sample_weight)
-    kmeans_bisect.fit(X)
-
-    assert_array_equal(kmeans_bisect.labels_, expected_labels)
-    assert_allclose(kmeans_bisect.inertia_, expected_inertia)
-    assert_allclose(kmeans_bisect.cluster_centers_, expected_centers)
-    assert kmeans_bisect.n_iter_ == expected_n_iter
