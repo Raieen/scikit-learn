@@ -1218,6 +1218,21 @@ def test_feature_names_out(Klass, method):
     names_out = kmeans.get_feature_names_out()
     assert_array_equal([f"{class_name}{i}" for i in range(n_clusters)], names_out)
 
+def test_bisect_two_same():
+    """ Check that running Bisecting KMeans with cluster=2 is the same
+    as running normal KMeans with cluster=2
+    """
+
+    km = KMeans(n_clusters=2,random_state=0)
+    km_bisect = KmeansBisecting(n_clusters=2,random_state=0)
+
+    result = km.fit(X)
+    result_bisect = km_bisect.fit(X)
+
+    assert_array_equal(result.labels_, result_bisect.labels_)
+    assert_array_equal(result.cluster_centers_, result_bisect.cluster_centers_)
+
+
 def test_bisect_choose_center():
     """ Check that the cluster containing the most points is chosen 
     to be split during Bisecting K-Means"""
