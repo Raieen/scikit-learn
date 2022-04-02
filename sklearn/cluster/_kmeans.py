@@ -2355,6 +2355,26 @@ class KmeansBisecting(KMeans):
 
         return centers
 
+    def _choose_center_step(self, X, x_squared_norms, sample_weight, best_labels, iteration):
+        #if it is the first iteration, we select the whole dataset as the cluster being split
+        selected_cluster = X
+        selected_cluster_idx = 0
+        selected_squared_norms = x_squared_norms
+        selected_sample_weight = sample_weight
+        indices_selected_cluster = np.where([best_labels]) # Get indices of the partitioned data.
+        #select a cluster
+        if iteration != 0:
+            # Do some counting for which cluster has the most labels.
+            cluster_counts = np.bincount(best_labels)
+            max_labels = np.argmax(cluster_counts)
+            selected_cluster_idx = max_labels if np.isscalar(max_labels) else max_labels[0]
+            selected_cluster = X[best_labels == selected_cluster_idx]
+            selected_squared_norms = x_squared_norms[best_labels == selected_cluster_idx]
+            selected_sample_weight = sample_weight[best_labels == selected_cluster_idx]
+            indices_selected_cluster = np.where([best_labels == selected_cluster_idx])[1] # Get indices of the partitioned data.
+        return selected_cluster, selected_cluster_idx, selected_squared_norms, selected_sample_weight, indices_selected_cluster
+
+
     def fit(self, X, y=None, sample_weight=None):
         """Compute bisecting k-means clustering.
 
@@ -2390,7 +2410,7 @@ class KmeansBisecting(KMeans):
             accept_large_sparse=False,
         )
 
-        super()._check_params(X)
+        self._check_params(X)
         random_state = check_random_state(self.random_state)
         sample_weight = _check_sample_weight(sample_weight, X, dtype=X.dtype)
         self._n_threads = _openmp_effective_n_threads()
@@ -2419,13 +2439,10 @@ class KmeansBisecting(KMeans):
             kmeans_single = _kmeans_single_lloyd
             self._check_mkl_vcomp(X, X.shape[0])
 
-        # for i in range(self._n_init):
-            # Initialize centers
         if self.verbose:
             print("Initialization complete")
 
         
-        T_best_inertia = None
         T_best_labels = np.zeros((X.shape[0]),dtype=np.int32)
         T_best_centers = None
         T_n_iter = 0
@@ -2436,22 +2453,15 @@ class KmeansBisecting(KMeans):
             best_n_iter_ = 0
             best_inertia = None
             best_labels = T_best_labels.copy()
-            #if it is the first iteration, we select the whole dataset as the cluster being split
-            selected_cluster = X
-            selected_cluster_idx = 0
-            selected_squared_norms = x_squared_norms
-            selected_sample_weight = sample_weight
-            indices_selected_cluster = np.where([best_labels]) # Get indices of the partitioned data.
-            #select a cluster
-            if i!=0:
-                # Do some counting for which cluster has the most labels.
-                cluster_counts = np.bincount(best_labels)
-                max_labels = np.argmax(cluster_counts)
-                selected_cluster_idx = max_labels if np.isscalar(max_labels) else max_labels[0]
-                selected_cluster = X[best_labels == selected_cluster_idx]
-                selected_squared_norms = x_squared_norms[best_labels == selected_cluster_idx]
-                selected_sample_weight = sample_weight[best_labels == selected_cluster_idx]
-                indices_selected_cluster = np.where([best_labels == selected_cluster_idx])[1] # Get indices of the partitioned data.
+
+            selected_cluster\
+            , selected_cluster_idx\
+            , selected_squared_norms\
+            , selected_sample_weight\
+            , indices_selected_cluster = self._choose_center_step(
+                                            X, x_squared_norms, sample_weight, best_labels, i
+                                        )
+            
             #find best new clustering of the selected cluster
             for j in range(self._n_init):
                 centers_init = self._init_centroids(
@@ -2467,13 +2477,6 @@ class KmeansBisecting(KMeans):
                     x_squared_norms=selected_squared_norms,
                     n_threads=self._n_threads,
                 )
-                # if (i == 0):
-                #     best_labels = labels
-                #     best_centers = centers
-                # # Merge the labels into current results.
-                # if (i != 0):
-                #     for k, index in np.ndenumerate(indices_selected_cluster):
-                #         best_labels[index] = labels[k]
             
                 # determine if these results are the best so far
                 # we chose a new run if it has a better inertia and the clustering is

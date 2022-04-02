@@ -1217,3 +1217,34 @@ def test_feature_names_out(Klass, method):
 
     names_out = kmeans.get_feature_names_out()
     assert_array_equal([f"{class_name}{i}" for i in range(n_clusters)], names_out)
+
+def test_bisect_choose_center():
+    """ Check that the cluster containing the most points is chosen 
+    to be split during Bisecting K-Means"""
+
+    X = np.asarray([[1.0,2.0],[3.0,4.0],[5.0,6.0],[7.0,8.0]])
+
+    km = KmeansBisecting()
+
+    x_squared_norms = row_norms(X, squared=True)
+    sample_weight = np.asarray([1,1,1,1])
+    best_labels = np.asarray([0,0,0,1])
+
+    expected_cluster = np.asarray([[1.0,2.0],[3.0,4.0],[5.0,6.0]])
+    expected_idx = np.asarray([0])
+    expected_squared_norms = row_norms(X[0:3],squared=True)
+    expected_sample_weight = np.ones(expected_cluster.shape[0])
+    expected_indices = np.asarray([0,1,2])
+
+    selected_cluster\
+    , selected_cluster_idx\
+    , selected_squared_norms\
+    , selected_sample_weight\
+    , indices_selected_cluster = km._choose_center_step(
+                                    X, x_squared_norms, sample_weight, best_labels, 1
+                                )
+    assert_array_equal(expected_cluster, selected_cluster)
+    assert_array_equal(expected_idx, selected_cluster_idx)
+    assert_array_equal(expected_squared_norms, selected_squared_norms)
+    assert_array_equal(expected_sample_weight, selected_sample_weight)
+    assert_array_equal(expected_indices, indices_selected_cluster)
